@@ -18,8 +18,9 @@ fieldset{border:1px solid var(--line);border-radius:4px;margin:0 0 12px;padding:
 legend{font-weight:600;padding:0 6px}
 .grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 label{display:block;font-size:13px;color:var(--mute)}
-input[type=text],input[type=number],input:not([type]){width:100%;margin-top:3px;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);font:inherit;font-size:16px;min-height:44px}
+input[type=text],input[type=number],input:not([type]),select,textarea{width:100%;margin-top:3px;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);font:inherit;font-size:16px;min-height:44px}
 input:focus,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+textarea{resize:vertical}
 .ac{border:1px solid var(--line);border-left:5px solid var(--acc);border-radius:4px;padding:10px;margin-bottom:12px}
 .ac h3{margin:0 0 8px;font-size:15px}
 .ac .hint{margin:10px 0 4px}
@@ -79,6 +80,12 @@ td.n,th.n{text-align:center}
     <div id="fname"></div>
   </div>
 
+  <div class="card">
+    <label>Lantai yang sedang diaudit (otomatis dipakai untuk ruangan yang ditambahkan)
+      <select id="lantai"><option value="">- pilih -</option><option value="1">Lantai 1</option><option value="2">Lantai 2</option><option value="3">Lantai 3</option><option value="4">Lantai 4</option><option value="5">Lantai 5</option><option value="6">Lantai 6</option></select>
+    </label>
+  </div>
+
   <form id="f" class="card" autocomplete="off">
     <h2 id="mode">Ruangan baru</h2>
     <fieldset>
@@ -93,12 +100,16 @@ td.n,th.n{text-align:center}
     </fieldset>
     <fieldset>
       <legend>Lampu</legend>
-      <div class="grid">
-        <label>Jenis lampu 1<input name="jl1" list="dl-lampu"></label>
+      <div class="ac"><h3>Lampu 1</h3><div class="grid">
+        <label class="full">Jenis lampu 1<select name="jl1" data-t="lampu"></select></label>
         <label>Daya lampu 1 (W)<input name="dl1" type="number" step="any" inputmode="decimal"></label>
-        <label>Jenis lampu 2<input name="jl2" list="dl-lampu"></label>
+        <label>Jumlah lampu 1<input name="jml1" type="number" min="0" step="1" inputmode="numeric"></label>
+      </div></div>
+      <div class="ac"><h3>Lampu 2</h3><div class="grid">
+        <label class="full">Jenis lampu 2<select name="jl2" data-t="lampu"></select></label>
         <label>Daya lampu 2 (W)<input name="dl2" type="number" step="any" inputmode="decimal"></label>
-      </div>
+        <label>Jumlah lampu 2<input name="jml2" type="number" min="0" step="1" inputmode="numeric"></label>
+      </div></div>
     </fieldset>
     <fieldset>
       <legend>AC</legend>
@@ -108,6 +119,10 @@ td.n,th.n{text-align:center}
         <label>Kecepatan evap<input name="kecevap" type="number" step="any" inputmode="decimal"></label>
         <label>Amper outdoor (A)<input name="ampout" type="number" step="any" inputmode="decimal"></label>
       </div>
+    </fieldset>
+    <fieldset>
+      <legend>Keterangan</legend>
+      <label>Catatan tambahan<textarea name="ket" rows="3" placeholder="contoh: AC bocor, lampu sebagian mati"></textarea></label>
     </fieldset>
     <div class="row actions">
       <button type="submit" id="save">Tambah ruangan</button>
@@ -130,38 +145,63 @@ td.n,th.n{text-align:center}
   </div>
 </div>
 
-<datalist id="dl-lampu"><option>LED</option><option>TL</option><option>CFL</option><option>Pijar</option><option>Halogen</option></datalist>
-<datalist id="dl-ac"><option>Split</option><option>Split Inverter</option><option>Cassette</option><option>Standing</option><option>Window</option><option>VRV/VRF</option></datalist>
 
 <script>
 const PKS=["0.5","0.75","1","1.5","2","2.5","3","5"];
 const KEY="audit-ruangan-v2",GKEY="audit-gedung-v1";
 const pkCols=n=>PKS.map(p=>["a"+n+"pk"+p,"AC "+n+" - "+p+" PK"]);
 const COLS=[
- ["nama","Nama Ruang"],["dim","Dimensi Ruang"],
+ ["nama","Nama Ruang"],["lantai","Lantai"],["dim","Dimensi Ruang"],
  ["jl1","Jenis Lampu 1"],["jl2","Jenis Lampu 2"],
  ["dl1","Daya Lampu 1"],["dl2","Daya Lampu 2"],
+ ["jml1","Jumlah Lampu 1"],["jml2","Jumlah Lampu 2"],
  ["lux","Lux Ruangan"],
  ["ja1","Jenis AC 1"],["ja2","Jenis AC 2"],
  ["sp1","Setpoint AC 1"],["sp2","Setpoint AC 2"],
  ...pkCols(1),...pkCols(2),
  ["suhu","Suhu Ruang"],["rh","RH (%)"],
- ["suhuevap","Suhu Evap"],["kecevap","Kecepatan Evap"],["ampout","Amper Outdoor"]
+ ["suhuevap","Suhu Evap"],["kecevap","Kecepatan Evap"],["ampout","Amper Outdoor"],
+ ["ket","Keterangan"]
 ];
 const f=document.getElementById("f"),tbl=document.getElementById("tbl"),ged=document.getElementById("gedung");
-let rows=[],editing=-1;
+let rows=[],editing=-1,prevLantai=null;
+const lan=document.getElementById("lantai"),LKEY="audit-lantai-v1";
+const FORMCOLS=COLS.filter(c=>c[0]!=="lantai");
 try{rows=JSON.parse(localStorage.getItem(KEY)||"null")||JSON.parse(localStorage.getItem("audit-ruangan-v1")||"[]")}catch(e){rows=[]}
 // data lama: jumlah PK dianggap milik AC 1
 rows.forEach(r=>PKS.forEach(p=>{if(r["pk"+p]!==undefined){if(r["a1pk"+p]===undefined)r["a1pk"+p]=r["pk"+p];delete r["pk"+p]}}));
-try{ged.value=localStorage.getItem(GKEY)||""}catch(e){}
+try{ged.value=localStorage.getItem(GKEY)||"";lan.value=localStorage.getItem(LKEY)||""}catch(e){}
+lan.addEventListener("change",()=>{try{localStorage.setItem(LKEY,lan.value)}catch(e){}});
 
 document.getElementById("acs").innerHTML=[1,2].map(n=>`
  <div class="ac"><h3>AC ${n}</h3>
-  <div class="grid"><label>Jenis AC ${n}<input name="ja${n}" list="dl-ac"></label><label>Setpoint AC ${n} (°C)<input name="sp${n}" type="number" step="any" inputmode="decimal"></label></div>
+  <div class="grid"><label>Jenis AC ${n}<select name="ja${n}" data-t="ac"></select></label><label>Setpoint AC ${n} (°C)<input name="sp${n}" type="number" step="any" inputmode="decimal"></label></div>
   <label class="hint">Jumlah unit AC ${n} menurut besaran PK</label>
   <div class="pk">${PKS.map(p=>`<label>${p} PK<input name="a${n}pk${p}" type="number" min="0" step="1" inputmode="numeric"></label>`).join("")}</div>
  </div>`).join("");
 
+const PRESET={lampu:["LED Bulb","LED Downlight","LED","TL","CFL","Pijar","Halogen"],ac:["Split","Split Inverter","Cassette","Standing","Window","VRV/VRF"]};
+const SEL={lampu:["jl1","jl2"],ac:["ja1","ja2"]};
+const extra={lampu:[],ac:[]};
+function fillSelects(){
+ Object.keys(SEL).forEach(t=>{
+  const used=[];
+  SEL[t].forEach(k=>rows.forEach(r=>{const v=String(r[k]||"").trim();if(v)used.push(v)}));
+  const list=[...new Set([...PRESET[t],...used,...extra[t]])];
+  SEL[t].forEach(k=>{
+   const el=f.elements[k],cur=el.value;
+   el.innerHTML='<option value="">- pilih -</option>'+list.map(v=>`<option>${esc(v)}</option>`).join("")+'<option value="__other">Lainnya (ketik sendiri)…</option>';
+   el.value=list.includes(cur)?cur:"";
+  });
+ });
+}
+f.addEventListener("change",e=>{
+ const el=e.target;
+ if(el.tagName!=="SELECT"||el.value!=="__other")return;
+ const t=el.dataset.t;
+ const v=(prompt("Ketik jenis "+(t==="ac"?"AC":"lampu")+":")||"").trim();
+ if(v){extra[t].push(v);fillSelects();el.value=v}else el.value="";
+});
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(rows))}catch(e){}}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
@@ -180,7 +220,7 @@ function renderCards(){
   return `<div class="rc"><h3>${i+1}. ${esc(r.nama)}</h3><div class="d">${esc(r.dim||"")}</div><dl>${items}</dl><div class="row"><button class="ghost" data-e="${i}">Edit</button><button class="danger" data-d="${i}">Hapus</button></div></div>`}).join("");
 }
 function render(){
- renderCards();showName();
+ fillSelects();renderCards();showName();
  document.getElementById("cnt").textContent=rows.length?`(${rows.length} ruangan)`:"";
  if(!rows.length){tbl.innerHTML='<tr><td class="empty">Belum ada data. Isi form di atas lalu tekan Tambah ruangan.</td></tr>';return}
  tbl.innerHTML="<thead><tr><th class='n'>No</th>"+COLS.map(c=>`<th>${esc(c[1])}</th>`).join("")+"<th></th></tr></thead><tbody>"+
@@ -190,6 +230,7 @@ function render(){
 
 function setMode(i){
  editing=i;
+ if(i<0&&prevLantai!==null){lan.value=prevLantai;prevLantai=null}
  document.getElementById("mode").textContent=i<0?"Ruangan baru":`Edit ruangan no. ${i+1}`;
  document.getElementById("save").textContent=i<0?"Tambah ruangan":"Simpan perubahan";
  document.getElementById("cancel").hidden=i<0;
@@ -198,7 +239,8 @@ function setMode(i){
 f.addEventListener("submit",e=>{
  e.preventDefault();
  const r={};
- COLS.forEach(([k])=>{r[k]=(f.elements[k].value||"").trim()});
+ FORMCOLS.forEach(([k])=>{const v=(f.elements[k].value||"").trim();r[k]=v==="__other"?"":v});
+ r.lantai=lan.value;
  if(editing<0)rows.push(r);else rows[editing]=r;
  persist();render();f.reset();setMode(-1);f.elements.nama.focus();
 });
@@ -208,7 +250,9 @@ document.addEventListener("click",e=>{
  const b=e.target.closest("button");if(!b)return;
  if(b.dataset.e!==undefined){
   const i=+b.dataset.e;
-  COLS.forEach(([k])=>{f.elements[k].value=rows[i][k]??""});
+  FORMCOLS.forEach(([k])=>{f.elements[k].value=rows[i][k]??""});
+  if(editing<0)prevLantai=lan.value;
+  lan.value=rows[i].lantai??"";
   setMode(i);f.scrollIntoView({behavior:"smooth"});f.elements.nama.focus();
  }else if(b.dataset.d!==undefined){
   const i=+b.dataset.d;
